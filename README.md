@@ -104,6 +104,10 @@ value or time differ, adjust them in `tests/direct/conftest.py` only.
 
 `submit_grace_proof` (LLM + web) is not covered by direct tests; test it on Studio.
 
+## Test report
+
+See [docs/TESTING.md](docs/TESTING.md) for the manual Studio results, issues found and what is still untested.
+
 ## License
 
 Add a license of your choice before publishing (for example MIT).
