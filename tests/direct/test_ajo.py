@@ -133,6 +133,7 @@ def test_slash_flow(h):
         h.send(h.alice, "slash", gid, 1, h.carol.as_hex)
     h.at(ROUND + 1)
     h.send(h.alice, "slash", gid, 1, h.carol.as_hex)
+    assert h.c.get_defaults(gid, h.carol.as_hex) == 1   # on-chain reputation
     assert h.round(gid, 1)["pool_wei"] == 3 * GEN       # collateral filled the gap
     with h.reverts("already settled"):
         h.send(h.alice, "slash", gid, 1, h.carol.as_hex)  # no double slash
@@ -169,3 +170,25 @@ def test_total_locked_returns_to_zero_after_full_cycle(h):
     for who in (h.alice, h.bob, h.carol):
         h.send(who, "claim_all", gid)                   # collateral + payouts out
     assert h.locked() == 0
+
+
+# ---------------- covered groups (anti take-and-run) ----------------
+def test_covered_group_holds_back_collateral_top_up(h):
+    gid = h.started_group(covered=True)
+    assert h.group(gid)["covered"] is True
+    for who in (h.alice, h.bob, h.carol):
+        h.send(who, "pay", gid, 1, value=GEN)
+    h.send(h.bob, "claim_payout", gid, 1)
+    # alice still owes 2 rounds (2 GEN) but has 1 GEN collateral -> 1 GEN is held back
+    assert h.credit(h.alice) == 2 * GEN
+    assert h.locked() == 6 * GEN                         # nothing left the contract
+
+
+def test_covered_last_recipient_gets_full_pot(h):
+    gid = h.started_group(covered=True)
+    for rnd in (1, 2, 3):
+        h.at((rnd - 1) * ROUND + 1)
+        for who in (h.alice, h.bob, h.carol):
+            h.send(who, "pay", gid, rnd, value=GEN)
+        h.send(h.alice, "claim_payout", gid, rnd)
+    assert h.credit(h.carol) == 3 * GEN                  # nothing left to owe, no hold

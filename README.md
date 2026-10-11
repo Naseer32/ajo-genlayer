@@ -15,6 +15,7 @@ others join by group id. Rules, rounds, payouts and balances are enforced by cod
 
 1. `create_group(contribution_gen, round_duration_secs, collateral_multiplier)` - creator sends the
    collateral and becomes member #1 and the group owner. Contribution is in **whole GEN**.
+   `create_group_covered(...)` creates a **covered** group (see Safety features).
 2. `join(gid)` - others join with the exact collateral. There is **no member cap**.
 3. `start(gid)` - the owner starts once at least 2 members have joined. Joining then closes; the number
    of rounds equals the number of members; payout order is join order.
@@ -35,6 +36,8 @@ Group ids and round numbers **start at 1**.
 | Funds trapped by a bad call | payable functions refund wrong calls as withdrawable credit |
 | Members who do not pay | collateral is `slash`-ed into the pot once the deadline passes |
 | Proof replay | proof URLs are hashed and can be used once |
+| Take-and-run (receive payout, then stop paying) | **covered groups**: on payout the contract holds back enough to top the recipient's collateral up to every round they still owe; released at completion |
+| Reputation | `get_defaults(gid, member)` exposes how often a member was slashed |
 | AI abuse | validators (LLM) are only used for `submit_grace_proof`, which can grant a time extension and **never moves funds** |
 | Accounting drift | `total_locked` tracks everything the contract owes and must equal its balance |
 | Gas limits with big groups | no unbounded loops in write paths; `get_members` and `release_collateral` are paginated |
@@ -42,10 +45,20 @@ Group ids and round numbers **start at 1**.
 ### Known limitations
 
 - Native GEN only (no USDC/ERC-20 yet).
-- Collateral covers `collateral_multiplier` missed rounds. A member who already received a payout and then
-  stops paying can leave the group with a loss - choose the multiplier accordingly.
+- In standard groups, collateral covers `collateral_multiplier` missed rounds, so a member who already
+  received a payout and then stops paying can leave the group with a loss. Use a covered group (or a larger
+  multiplier) when members do not know each other. Covered groups trade away part of the early-payout
+  advantage: early recipients receive less up front because part is held as collateral.
 - The owner decides when to `start` and may start with only 2 members; check `member_count` before joining.
 - No audit has been done.
+
+## Consensus: evidence check (`submit_grace_proof`)
+
+A member who cannot pay in time can submit a proof URL. Each validator renders the page and asks an LLM for a
+strict JSON verdict with four booleans: `amount_ok`, `time_ok`, `payer_ok`, `relevant`. Validators must agree on
+**every** field (`gl.eq_principle.prompt_comparative`, with a `strict_eq` fallback on older SDKs), and the grace
+is granted only if **all four** are true. Evidence text is treated as untrusted input. The result can only extend
+the deadline by half a round; it can never move funds. Each proof URL can be used once.
 
 ## Important GenLayer note: paying wallets
 

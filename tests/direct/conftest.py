@@ -51,14 +51,15 @@ class Harness:
         return int(self.c.get_total_locked())
 
     # --- scenarios ---------------------------------------------------
-    def new_group(self, creator=None, gen=1, secs=ROUND, mult=1):
+    def new_group(self, creator=None, gen=1, secs=ROUND, mult=1, covered=False):
         creator = creator or self.alice
-        self.send(creator, "create_group", gen, secs, mult, value=gen * mult * GEN)
+        fn = "create_group_covered" if covered else "create_group"
+        self.send(creator, fn, gen, secs, mult, value=gen * mult * GEN)
         return int(self.c.get_group_count())
 
-    def started_group(self):
+    def started_group(self, covered=False):
         """alice (owner, member 1), bob (2), carol (3); started at T0."""
-        gid = self.new_group()
+        gid = self.new_group(covered=covered)
         self.send(self.bob, "join", gid, value=GEN)
         self.send(self.carol, "join", gid, value=GEN)
         self.at(0)
