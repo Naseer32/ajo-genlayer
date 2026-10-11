@@ -38,7 +38,8 @@ Group ids and round numbers **start at 1**.
 | Proof replay | proof URLs are hashed and can be used once |
 | Take-and-run (receive payout, then stop paying) | **covered groups**: on payout the contract holds back enough to top the recipient's collateral up to every round they still owe; released at completion |
 | Reputation | `get_defaults(gid, member)` exposes how often a member was slashed |
-| AI abuse | validators (LLM) are only used for `submit_grace_proof`, which can grant a time extension and **never moves funds** |
+| Stranded obligations | a round finalizes only when all its obligations are settled; slash always settles (write-off if no collateral) |
+| Stale / self-attributed evidence | allowlisted hosts, on-chain payer code, bounded date window, third-party check; grace never moves funds |
 | Accounting drift | `total_locked` tracks everything the contract owes and must equal its balance |
 | Gas limits with big groups | no unbounded loops in write paths; `get_members` and `release_collateral` are paginated |
 
@@ -52,13 +53,32 @@ Group ids and round numbers **start at 1**.
 - The owner decides when to `start` and may start with only 2 members; check `member_count` before joining.
 - No audit has been done.
 
+## Settlement rule (nothing can be stranded)
+
+A round is finalized **only when every member's obligation for it is settled** (paid, or slashed after the
+deadline). `slash` is permissionless and always settles the obligation: if the defaulter's collateral is
+exhausted the shortfall is written off, so a single defaulter can never block a group. The group completes,
+and collateral is released (`withdraw_collateral` / `claim_all` / `release_collateral`), only after every
+round has been paid out - i.e. after every obligation is settled.
+
 ## Consensus: evidence check (`submit_grace_proof`)
 
-A member who cannot pay in time can submit a proof URL. Each validator renders the page and asks an LLM for a
-strict JSON verdict with four booleans: `amount_ok`, `time_ok`, `payer_ok`, `relevant`. Validators must agree on
-**every** field (`gl.eq_principle.prompt_comparative`, with a `strict_eq` fallback on older SDKs), and the grace
-is granted only if **all four** are true. Evidence text is treated as untrusted input. The result can only extend
-the deadline by half a round; it can never move funds. Each proof URL can be used once.
+A member who cannot pay in time can ask for **one bounded extension** (half a round) per round.
+
+Deterministic rules first (no LLM): the group owner lists allowed evidence hosts before `start`
+(`set_evidence_hosts`; none = grace disabled), the URL must be `https` on an allowed host, a URL can be used
+once, and the round must already be open.
+
+The payer is bound to the submitting member by an **on-chain reference code**
+(`get_proof_code(gid, round, member)`, a hash of group, round and member address). It must appear on the
+evidence page; free-form text from the caller is not used at all.
+
+Validators then render the page and an LLM returns four booleans: `amount_ok`, `time_ok` (payment date inside
+a bounded window: from one round before this round, never before the group started, until the extended
+deadline), `third_party` (a record issued by a bank/provider/explorer, not text the payer could have written)
+and the deterministic `code_ok`. Validators must agree on every field (`gl.eq_principle.prompt_comparative`,
+with a `strict_eq` fallback) and grace is granted only if **all four** are true. It can only extend the
+deadline; it never moves funds.
 
 ## Important GenLayer note: paying wallets
 
@@ -103,10 +123,6 @@ The tests were written against the genlayer-test direct-test fixtures (`direct_v
 value or time differ, adjust them in `tests/direct/conftest.py` only.
 
 `submit_grace_proof` (LLM + web) is not covered by direct tests; test it on Studio.
-
-## Test report
-
-See [docs/TESTING.md](docs/TESTING.md) for the manual Studio results, issues found and what is still untested.
 
 ## License
 

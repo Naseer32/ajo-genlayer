@@ -37,6 +37,16 @@ class Harness:
     def reverts(self, message: str):
         return self.vm.expect_revert(message)
 
+    # --- non-deterministic mocks (web page + LLM verdict) ------------------
+    def mock_evidence(self, url, page_text, llm_verdict):
+        """Mock the evidence page and the LLM answer (assumed genlayer-test API:
+        direct_vm.mock_web / direct_vm.mock_llm - adjust here if yours differs)."""
+        self.vm.mock_web(url, {"response": {"status": 200, "body": page_text}})
+        self.vm.mock_llm(".*", json.dumps(llm_verdict))
+
+    def proof_code(self, gid, rnd, who):
+        return self.c.get_proof_code(gid, rnd, who.as_hex)
+
     # --- read helpers ------------------------------------------------
     def group(self, gid):
         return json.loads(self.c.get_group(gid))
@@ -57,11 +67,14 @@ class Harness:
         self.send(creator, fn, gen, secs, mult, value=gen * mult * GEN)
         return int(self.c.get_group_count())
 
-    def started_group(self, covered=False):
-        """alice (owner, member 1), bob (2), carol (3); started at T0."""
+    def started_group(self, covered=False, hosts=""):
+        """alice (owner, member 1), bob (2), carol (3); started at T0.
+        `hosts` = comma separated evidence hosts (must be set before start)."""
         gid = self.new_group(covered=covered)
         self.send(self.bob, "join", gid, value=GEN)
         self.send(self.carol, "join", gid, value=GEN)
+        if hosts:
+            self.send(self.alice, "set_evidence_hosts", gid, hosts)
         self.at(0)
         self.send(self.alice, "start", gid)
         return gid
