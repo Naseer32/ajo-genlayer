@@ -11,7 +11,7 @@ def test_group_ids_start_at_one(h):
 def test_create_group_sets_params(h):
     gid = h.new_group(gen=25, secs=600, mult=2)
     g = h.group(gid)
-    assert g["owner"].lower() == h.alice.as_hex.lower()
+    assert g["owner"].lower() == h.hex(h.alice).lower()
     assert g["contribution_wei"] == 25 * GEN
     assert g["collateral_wei"] == 50 * GEN
     assert g["member_count"] == 1 and g["status"] == 0
@@ -66,9 +66,9 @@ def test_transfer_group_owner(h):
     gid = h.new_group()
     h.send(h.bob, "join", gid, value=GEN)
     with h.reverts("new owner must be a member"):
-        h.send(h.alice, "transfer_group_owner", gid, h.carol.as_hex)
-    h.send(h.alice, "transfer_group_owner", gid, h.bob.as_hex)
-    assert h.group(gid)["owner"].lower() == h.bob.as_hex.lower()
+        h.send(h.alice, "transfer_group_owner", gid, h.hex(h.carol))
+    h.send(h.alice, "transfer_group_owner", gid, h.hex(h.bob))
+    assert h.group(gid)["owner"].lower() == h.hex(h.bob).lower()
     with h.reverts("only group owner"):
         h.send(h.alice, "start", gid)
     h.send(h.bob, "start", gid)
@@ -104,7 +104,7 @@ def test_full_round_payout_and_withdraw(h):
     for who in (h.alice, h.bob, h.carol):
         h.send(who, "pay", gid, 1, value=GEN)
     assert h.round(gid, 1)["pool_wei"] == 3 * GEN
-    assert h.round(gid, 1)["recipient"].lower() == h.alice.as_hex.lower()
+    assert h.round(gid, 1)["recipient"].lower() == h.hex(h.alice).lower()
     h.send(h.carol, "claim_payout", gid, 1)             # anyone may trigger
     assert h.round(gid, 1)["paid_out"] is True
     assert h.credit(h.alice) == 3 * GEN
@@ -130,13 +130,13 @@ def test_slash_flow(h):
     h.send(h.bob, "pay", gid, 1, value=GEN)
     h.at(10)
     with h.reverts("deadline not passed"):
-        h.send(h.alice, "slash", gid, 1, h.carol.as_hex)
+        h.send(h.alice, "slash", gid, 1, h.hex(h.carol))
     h.at(ROUND + 1)
-    h.send(h.alice, "slash", gid, 1, h.carol.as_hex)
-    assert h.c.get_defaults(gid, h.carol.as_hex) == 1   # on-chain reputation
+    h.send(h.alice, "slash", gid, 1, h.hex(h.carol))
+    assert h.c.get_defaults(gid, h.hex(h.carol)) == 1   # on-chain reputation
     assert h.round(gid, 1)["pool_wei"] == 3 * GEN       # collateral filled the gap
     with h.reverts("already settled"):
-        h.send(h.alice, "slash", gid, 1, h.carol.as_hex)  # no double slash
+        h.send(h.alice, "slash", gid, 1, h.hex(h.carol))  # no double slash
     h.send(h.bob, "claim_payout", gid, 1)
     assert h.credit(h.alice) == 3 * GEN
 
@@ -146,7 +146,7 @@ def test_cannot_slash_someone_who_paid(h):
     h.send(h.bob, "pay", gid, 1, value=GEN)
     h.at(ROUND + 1)
     with h.reverts("already settled"):
-        h.send(h.alice, "slash", gid, 1, h.bob.as_hex)
+        h.send(h.alice, "slash", gid, 1, h.hex(h.bob))
 
 
 # ---------------- isolation & accounting ----------------
@@ -201,10 +201,10 @@ def test_underfunded_round_cannot_finalize_before_slash(h):
     h.at(ROUND + 1)
     with h.reverts("round not settled"):
         h.send(h.alice, "claim_payout", gid, 1)          # unpaid + unslashed -> cannot finalize
-    h.send(h.alice, "slash", gid, 1, h.bob.as_hex)
+    h.send(h.alice, "slash", gid, 1, h.hex(h.bob))
     with h.reverts("round not settled"):
         h.send(h.alice, "claim_payout", gid, 1)          # carol still unsettled
-    h.send(h.alice, "slash", gid, 1, h.carol.as_hex)
+    h.send(h.alice, "slash", gid, 1, h.hex(h.carol))
     h.send(h.alice, "claim_payout", gid, 1)              # now every obligation is settled
     assert h.credit(h.alice) == 3 * GEN
 
@@ -228,7 +228,7 @@ def test_final_underfunded_round_cannot_strand_obligations_or_release_collateral
     with h.reverts("group not completed"):
         h.send(h.alice, "release_collateral", gid, 0, 50)
     # a safe settlement path remains: anyone can slash the defaulter
-    h.send(h.bob, "slash", gid, 3, h.carol.as_hex)
+    h.send(h.bob, "slash", gid, 3, h.hex(h.carol))
     h.send(h.bob, "claim_payout", gid, 3)
     assert h.group(gid)["status"] == 2
     h.send(h.bob, "withdraw_collateral", gid)             # released only after settlement
@@ -246,7 +246,7 @@ def test_defaulter_with_no_collateral_is_written_off_and_group_completes(h):
         h.send(h.alice, "pay", gid, rnd, value=GEN)
         h.send(h.bob, "pay", gid, rnd, value=GEN)
         h.at(rnd * ROUND + 1)
-        h.send(h.alice, "slash", gid, rnd, h.carol.as_hex)  # round 3: collateral already used -> written off, no revert
+        h.send(h.alice, "slash", gid, rnd, h.hex(h.carol))  # round 3: collateral already used -> written off, no revert
         h.send(h.alice, "claim_payout", gid, rnd)
     assert h.group(gid)["status"] == 2
     assert h.credit(h.carol) == 2 * GEN                   # last recipient bears the unrecoverable shortfall
@@ -271,19 +271,19 @@ def test_valid_evidence_grants_bounded_grace(h):
     code = h.proof_code(gid, 1, h.carol)
     h.mock_evidence(URL, f"Receipt. Reference {code}. Amount 1 GEN.", GOOD)
     h.send(h.carol, "submit_grace_proof", gid, 1, URL)
-    assert h.c.has_grace(gid, 1, h.carol.as_hex) is True
+    assert h.c.has_grace(gid, 1, h.hex(h.carol)) is True
     h.at(ROUND + 10)                                       # inside the extra half-round only
     with h.reverts("deadline not passed"):
-        h.send(h.alice, "slash", gid, 1, h.carol.as_hex)
+        h.send(h.alice, "slash", gid, 1, h.hex(h.carol))
     h.at(ROUND + ROUND // 2 + 1)                           # extension is bounded
-    h.send(h.alice, "slash", gid, 1, h.carol.as_hex)
+    h.send(h.alice, "slash", gid, 1, h.hex(h.carol))
 
 
 def test_evidence_without_the_members_code_gets_no_grace(h):
     gid = _evidence_group(h)
     h.mock_evidence(URL, "Receipt. Amount 1 GEN. No reference.", GOOD)
     h.send(h.carol, "submit_grace_proof", gid, 1, URL)
-    assert h.c.has_grace(gid, 1, h.carol.as_hex) is False
+    assert h.c.has_grace(gid, 1, h.hex(h.carol)) is False
 
 
 def test_evidence_bound_to_another_member_cannot_be_reused(h):
@@ -291,7 +291,7 @@ def test_evidence_bound_to_another_member_cannot_be_reused(h):
     bobs_code = h.proof_code(gid, 1, h.bob)
     h.mock_evidence(URL, f"Receipt. Reference {bobs_code}.", GOOD)
     h.send(h.carol, "submit_grace_proof", gid, 1, URL)    # carol submits bob's receipt
-    assert h.c.has_grace(gid, 1, h.carol.as_hex) is False
+    assert h.c.has_grace(gid, 1, h.hex(h.carol)) is False
 
 
 def test_stale_evidence_gets_no_grace(h):
@@ -300,7 +300,7 @@ def test_stale_evidence_gets_no_grace(h):
     h.mock_evidence(URL, f"Receipt {code}. Dated long before this round.",
                     {**GOOD, "time_ok": False})
     h.send(h.carol, "submit_grace_proof", gid, 1, URL)
-    assert h.c.has_grace(gid, 1, h.carol.as_hex) is False
+    assert h.c.has_grace(gid, 1, h.hex(h.carol)) is False
 
 
 def test_self_attributed_evidence_gets_no_grace(h):
@@ -308,7 +308,7 @@ def test_self_attributed_evidence_gets_no_grace(h):
     code = h.proof_code(gid, 1, h.carol)
     h.mock_evidence(URL, f"I, carol, paid. {code}", {**GOOD, "third_party": False})
     h.send(h.carol, "submit_grace_proof", gid, 1, URL)
-    assert h.c.has_grace(gid, 1, h.carol.as_hex) is False
+    assert h.c.has_grace(gid, 1, h.hex(h.carol)) is False
 
 
 def test_evidence_source_rules(h):

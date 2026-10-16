@@ -46,4 +46,12 @@ Fix 2 (evidence): all rejected as expected
 - evidence after the extended deadline: "too late"
 
 Not verified on-chain: a valid receipt page containing the member's code, stale evidence (date outside the
-window) and self-attributed evidence. These are covered by direct tests only, which have not been executed yet.
+window) and self-attributed evidence. These are covered by direct tests (see below).
+
+## Direct tests (Oct 12 2026)
+`pytest tests/direct -q`: 29 passed (genlayer-test, direct mode).
+Includes the steward-requested cases: a final underfunded round cannot finalize or release collateral until
+every obligation is settled; stale, self-attributed, wrong-member and missing-code evidence cannot grant grace.
+Note: the evidence tests mock the web page and the LLM verdict, so they verify the contract's decision logic
+given a verdict, not the behaviour of real validators.
+The harness (tests/direct/conftest.py) refreshes message_raw["datetime"] itself because vm.warp() does not.
